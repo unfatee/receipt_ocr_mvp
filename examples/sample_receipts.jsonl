@@ -1,4 +1,4 @@
 {"text":"FRESH MARKET\n123 MAIN STREET\nDATE: 2026-05-30\nMILK 2.50\nBREAD 1.20\nCOFFEE 8.90\nTOTAL 12.60","expected":{"store_name":"FRESH MARKET","date":"2026-05-30","total_amount":12.60}}
 {"text":"OOO ALFA\nInvoice Date 30.05.2026\nKeyboard 2500.00\nMouse 990.00\nИТОГО 3490.00","expected":{"store_name":"OOO ALFA","date":"2026-05-30","total_amount":3490.00}}
 {"text":"CITY SHOP\n05/30/2026\nTea 4.50\nSugar 3.10\nGrand Total 7.60","expected":{"store_name":"CITY SHOP","date":"2026-05-30","total_amount":7.60}}
-
+{"text":"tan woon yann\nBOOKTA_K(TAMANDAYA)SDNBHD\n789417-W\nNO.5:55,57&59,JALANSAGU18\nTAMANDAYA.\n8110OJOHORBAHRU\nJOHOR.\nDocumentNo:TD01167104\nDate:\n25/12/20188:13:39PM\nCashier:\nMANIS\nMember:\nCASH BILL\nCODE/DESC\n9556939040118\nKFMODELIINGCLAYKIDDYFISH\n9.00\n9.000\n0.00\n1PC\nTotal:\n9.00\nRour dingAdjustment\nRounddTotal(RM):\n9.00\nCash\n10.00\nCHANGE\n1.00","expected":{"store_name":"BOOKTA_K(TAMANDAYA)SDNBHD","date":"2018-12-25","total_amount":9.00}}

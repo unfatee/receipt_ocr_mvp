@@ -8,17 +8,20 @@ from pydantic import BaseModel, Field
 
 TOTAL_KEYWORDS = (
     "total",
+    "totai",
     "grand total",
+    "round total",
+    "rounddtotal",
+    "rounded total",
     "amount due",
-    "amount",
     "итого",
     "сумма",
     "к оплате",
-    "оплата",
 )
 
 SKIP_ITEM_KEYWORDS = (
     "total",
+    "totai",
     "subtotal",
     "tax",
     "vat",
@@ -64,6 +67,31 @@ def _amount_to_float(value: str) -> float | None:
         return None
 
 
+def _money_values(text: str) -> list[float]:
+    values: list[float] = []
+    for match in re.findall(r"(?<!\d)\d{1,6}[,.]\d{2,3}(?!\d)", text):
+        value = _amount_to_float(match)
+        if value is not None:
+            values.append(value)
+    return values
+
+
+def _looks_like_money_only(text: str) -> bool:
+    clean = text.strip()
+    return bool(re.fullmatch(r"[*\s]*\d{1,6}[,.]\d{2,3}[*\s]*", clean))
+
+
+def _total_keyword_score(text: str) -> int:
+    normalized = re.sub(r"[^a-zа-я0-9]+", "", text.lower())
+    if any(word in normalized for word in ("rounddtotal", "roundedtotal", "grandtotal", "roundtotal", "итого", "коплате")):
+        return 4
+    if "total" in normalized or "totai" in normalized:
+        return 3
+    if "amountdue" in normalized:
+        return 3
+    return 0
+
+
 def _normalize_date(parts: tuple[int, int, int]) -> str | None:
     year, month, day = parts
     if year < 100:
@@ -75,76 +103,138 @@ def _normalize_date(parts: tuple[int, int, int]) -> str | None:
 
 
 def extract_date(text: str) -> str | None:
-    patterns = [
-        r"(?P<y>20\d{2}|19\d{2})[-./](?P<m>\d{1,2})[-./](?P<d>\d{1,2})",
-        r"(?P<d>\d{1,2})[-.](?P<m>\d{1,2})[-.](?P<y>20\d{2}|19\d{2}|\d{2})",
-        r"(?P<m>\d{1,2})/(?P<d>\d{1,2})/(?P<y>20\d{2}|19\d{2}|\d{2})",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if not match:
-            continue
-        y = int(match.group("y"))
-        m = int(match.group("m"))
-        d = int(match.group("d"))
-        normalized = _normalize_date((y, m, d))
+    for match in re.finditer(r"(?P<y>20\d{2}|19\d{2})[-./](?P<m>\d{1,2})[-./](?P<d>\d{1,2})", text):
+        normalized = _normalize_date((int(match.group("y")), int(match.group("m")), int(match.group("d"))))
         if normalized:
             return normalized
+
+    for match in re.finditer(r"(?P<a>\d{1,2})[-./](?P<b>\d{1,2})[-./](?P<y>20\d{2}|19\d{2}|\d{2})", text):
+        a = int(match.group("a"))
+        b = int(match.group("b"))
+        y = int(match.group("y"))
+        if a > 12:
+            candidates = [(y, b, a)]
+        elif b > 12:
+            candidates = [(y, a, b)]
+        else:
+            # SROIE receipts mostly use DD/MM/YYYY; keep MM/DD as fallback for ambiguous cases.
+            candidates = [(y, b, a), (y, a, b)]
+        for candidate in candidates:
+            normalized = _normalize_date(candidate)
+            if normalized:
+                return normalized
     return None
 
 
 def extract_total(lines: list[str]) -> float | None:
-    candidates: list[float] = []
-    for line in lines:
-        normalized = line.lower()
-        if any(keyword in normalized for keyword in TOTAL_KEYWORDS):
-            amounts = re.findall(r"[-+]?\d+[,.]\d{2}|[-+]?\d{2,}", line)
-            for amount in amounts:
-                value = _amount_to_float(amount)
-                if value is not None:
-                    candidates.append(value)
+    candidates: list[tuple[int, int, float]] = []
+    for index, line in enumerate(lines):
+        score = _total_keyword_score(line)
+        if not score:
+            continue
+
+        for amount in _money_values(line):
+            if amount > 0:
+                candidates.append((score, index, amount))
+
+        for offset, nearby in enumerate(lines[index + 1 : index + 4], start=1):
+            if _total_keyword_score(nearby) or any(word in nearby.lower() for word in ("cash", "change", "balance")):
+                break
+            if _looks_like_money_only(nearby):
+                amount = _amount_to_float(nearby)
+                if amount and amount > 0:
+                    candidates.append((score + max(0, 3 - offset), index, amount))
+                    break
+
     if candidates:
-        return max(candidates)
+        candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        return candidates[0][2]
 
     fallback = []
-    for line in lines:
-        for amount in re.findall(r"[-+]?\d+[,.]\d{2}", line):
-            value = _amount_to_float(amount)
-            if value is not None:
+    for index, line in enumerate(lines):
+        lower = line.lower()
+        if any(word in lower for word in ("address", "jalan", "no.", "document", "invoice", "date")):
+            continue
+        if index < 6 and re.search(r"[a-zа-я]", lower):
+            continue
+        for value in _money_values(line):
+            if value > 0:
                 fallback.append(value)
     return max(fallback) if fallback else None
 
 
 def extract_store(lines: list[str]) -> str | None:
-    for line in lines[:8]:
+    business_words = (
+        "sdn",
+        "bhd",
+        "ltd",
+        "llc",
+        "enterprise",
+        "market",
+        "shop",
+        "store",
+        "hardware",
+        "restaurant",
+        "trading",
+        "mart",
+        "m)",
+    )
+    fallback: str | None = None
+    for line in lines[:10]:
         clean = line.strip(" -:;")
         lower = clean.lower()
         if len(clean) < 3:
             continue
         if re.search(r"\d{2,}", clean):
             continue
-        if any(keyword in lower for keyword in TOTAL_KEYWORDS):
+        if _total_keyword_score(lower):
             continue
-        if any(word in lower for word in ("receipt", "invoice", "date", "касса", "чек")):
+        if any(word in lower for word in ("receipt", "invoice", "date", "cash bill", "касса", "чек")):
             continue
-        return clean
-    return None
+        if any(word in lower for word in business_words):
+            return clean
+        if fallback is None:
+            fallback = clean
+    return fallback
 
 
 def extract_items(lines: list[str]) -> list[ReceiptItem]:
     items: list[ReceiptItem] = []
     pattern = re.compile(r"^(?P<name>.+?)\s+(?P<amount>\d+[,.]\d{2})\s*$")
-    for line in lines:
+    item_zone = False
+    for index, line in enumerate(lines):
         lower = line.lower()
+        if any(marker in lower for marker in ("code/desc", "description", "cash bill", "item")):
+            item_zone = True
+            continue
+        if _total_keyword_score(line):
+            item_zone = False
         if any(keyword in lower for keyword in SKIP_ITEM_KEYWORDS):
             continue
         match = pattern.search(line)
-        if not match:
+        if match:
+            name = re.sub(r"\s{2,}", " ", match.group("name")).strip(" -:")
+            amount = _amount_to_float(match.group("amount"))
+            if name and amount is not None:
+                items.append(ReceiptItem(name=name, amount=amount))
             continue
-        name = re.sub(r"\s{2,}", " ", match.group("name")).strip(" -:")
-        amount = _amount_to_float(match.group("amount"))
-        if name and amount is not None:
-            items.append(ReceiptItem(name=name, amount=amount))
+
+        if not item_zone:
+            continue
+        if not re.search(r"[A-Za-zА-Яа-я]", line):
+            continue
+        if any(word in lower for word in ("price", "disc", "qty", "rm", "code", "desc", "cash", "member", "cashier")):
+            continue
+        if len(re.sub(r"[^A-Za-zА-Яа-я]+", "", line)) < 4:
+            continue
+        for nearby in lines[index + 1 : index + 6]:
+            if _total_keyword_score(nearby):
+                break
+            if _looks_like_money_only(nearby):
+                amount = _amount_to_float(nearby)
+                if amount and amount > 0:
+                    items.append(ReceiptItem(name=line, amount=amount))
+                    break
     return items
 
 

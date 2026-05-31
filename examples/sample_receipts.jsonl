@@ -1,0 +1,4 @@
+{"text":"FRESH MARKET\n123 MAIN STREET\nDATE: 2026-05-30\nMILK 2.50\nBREAD 1.20\nCOFFEE 8.90\nTOTAL 12.60","expected":{"store_name":"FRESH MARKET","date":"2026-05-30","total_amount":12.60}}
+{"text":"OOO ALFA\nInvoice Date 30.05.2026\nKeyboard 2500.00\nMouse 990.00\nИТОГО 3490.00","expected":{"store_name":"OOO ALFA","date":"2026-05-30","total_amount":3490.00}}
+{"text":"CITY SHOP\n05/30/2026\nTea 4.50\nSugar 3.10\nGrand Total 7.60","expected":{"store_name":"CITY SHOP","date":"2026-05-30","total_amount":7.60}}
+

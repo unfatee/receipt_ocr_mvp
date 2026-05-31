@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Receipt OCR MVP</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">OCR MVP</p>
+            <h1>Чеки и накладные</h1>
+          </div>
+          <span class="status">API + Web</span>
+        </header>
+
+        <form id="parse-form" class="panel">
+          <label class="drop-zone" for="file">
+            <span class="drop-title">Загрузите изображение</span>
+            <span class="drop-hint">JPG, PNG или скан чека</span>
+            <input id="file" name="file" type="file" accept="image/*" />
+          </label>
+
+          <label class="text-input">
+            <span>OCR-текст для проверки парсера</span>
+            <textarea id="ocr_text" name="ocr_text" rows="8" placeholder="Можно оставить пустым, если загружено изображение"></textarea>
+          </label>
+
+          <button type="submit">Распознать</button>
+        </form>
+      </section>
+
+      <section class="results" aria-live="polite">
+        <div class="result-grid">
+          <div class="metric">
+            <span>Магазин</span>
+            <strong id="store">-</strong>
+          </div>
+          <div class="metric">
+            <span>Дата</span>
+            <strong id="date">-</strong>
+          </div>
+          <div class="metric">
+            <span>Сумма</span>
+            <strong id="total">-</strong>
+          </div>
+          <div class="metric">
+            <span>Уверенность</span>
+            <strong id="confidence">-</strong>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Товары</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Наименование</th>
+                <th>Сумма</th>
+              </tr>
+            </thead>
+            <tbody id="items">
+              <tr><td colspan="2">Нет данных</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel">
+          <h2>JSON</h2>
+          <pre id="json-output">{}</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector("#parse-form");
+      const fields = {
+        store: document.querySelector("#store"),
+        date: document.querySelector("#date"),
+        total: document.querySelector("#total"),
+        confidence: document.querySelector("#confidence"),
+        items: document.querySelector("#items"),
+        output: document.querySelector("#json-output")
+      };
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        fields.output.textContent = "Обработка...";
+        const response = await fetch("/api/parse", { method: "POST", body: formData });
+        const data = await response.json();
+
+        fields.store.textContent = data.store_name || "-";
+        fields.date.textContent = data.date || "-";
+        fields.total.textContent = data.total_amount ?? "-";
+        fields.confidence.textContent = data.confidence ?? "-";
+        fields.items.innerHTML = "";
+
+        if (data.items.length === 0) {
+          fields.items.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+        } else {
+          for (const item of data.items) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td>${item.name}</td><td>${item.amount}</td>`;
+            fields.items.appendChild(row);
+          }
+        }
+
+        fields.output.textContent = JSON.stringify(data, null, 2);
+      });
+    </script>
+  </body>
+</html>
+
